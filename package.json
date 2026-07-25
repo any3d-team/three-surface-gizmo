@@ -6,8 +6,12 @@
   "author": "",
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "git+https://github.com/any3d-team/three-surface-gizmo.git"
   },
+  "bugs": {
+    "url": "https://github.com/any3d-team/three-surface-gizmo/issues"
+  },
+  "homepage": "https://github.com/any3d-team/three-surface-gizmo#readme",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",

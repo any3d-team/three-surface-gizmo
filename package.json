@@ -1,0 +1,65 @@
+{
+  "name": "three-surface-gizmo",
+  "version": "0.1.0",
+  "description": "Surface-aligned 3D transform gizmo for three.js — move (surface-projected), rotate (snap-to-90°), scale. Supports vanilla three.js and R3F.",
+  "license": "MIT",
+  "author": "",
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./r3f": "./dist/r3f/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "prepublishOnly": "pnpm build",
+    "prepare": "pnpm build"
+  },
+  "keywords": [
+    "threejs",
+    "gizmo",
+    "transform-controls",
+    "r3f",
+    "react-three-fiber",
+    "surface",
+    "decal"
+  ],
+  "homepage": "",
+  "peerDependencies": {
+    "@react-three/fiber": ">=9.0.0",
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0",
+    "three": ">=0.160.0"
+  },
+  "peerDependenciesMeta": {
+    "@react-three/fiber": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@react-three/fiber": "^9.5.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.185.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "three": "^0.183.2",
+    "typescript": "^5.9.3"
+  }
+}

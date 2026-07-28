@@ -38,16 +38,21 @@ import {
   Vector3,
 } from "three";
 import type { Camera } from "three";
-import type { GizmoCursorState, GizmoEvents, HandleMode } from "./types";
-import { RING_RADIUS } from "./types";
-import { computeGizmoCursorState, EMPTY_GIZMO_CURSOR } from "./cursor";
+import type { GizmoCursorState, GizmoEvents, HandleMode } from "./types.js";
+import { RING_RADIUS } from "./types.js";
+import { computeGizmoCursorState, EMPTY_GIZMO_CURSOR } from "./cursor.js";
 import {
   angleInGizmoLocal,
   decalRotationFromRingDrag,
   decalRotationToYaw,
   gizmoDragFrameQInv,
-} from "./rotate";
-import { orientToNormalQ, transportRotation } from "./orientation";
+} from "./rotate.js";
+import {
+  absQuaternionFromNormalAndRef,
+  extractRefAxesFromAbsQuaternion,
+  extractSpinAroundNormal,
+  orientToNormalQ,
+} from "./orientation.js";
 
 // ── Constants ───────────────────────────────────────────────────────
 
@@ -73,6 +78,11 @@ interface DragState {
   startScale: number;
   curNormal: Vector3;
   curRotation: number;
+  /** Move: fixed pattern axes + abs orientation (path-independent) */
+  refXWorld?: Vector3;
+  refYWorld?: Vector3;
+  absQWorld?: Quaternion;
+  lastHitWorld?: Vector3;
   cornerIndex?: number;
   cornerWorld?: Vector3;
 }
@@ -159,14 +169,19 @@ export class GizmoController {
     centerWorld: new Vector3(),
     normalWorld: new Vector3(),
     meshWorldQ: new Quaternion(),
+    meshWorldQInv: new Quaternion(),
     desiredMat: new Matrix4(),
     q: new Quaternion(),
+    absLocalQ: new Quaternion(),
     v1: new Vector3(),
     v2: new Vector3(),
     /** View direction for backface culling — must not alias scale (v2) */
     viewDir: new Vector3(),
     parentInv: new Matrix4(),
     cornerWorld: new Vector3(),
+    nLocal: new Vector3(),
+    refX: new Vector3(),
+    refY: new Vector3(),
   };
 
   constructor(config: GizmoControllerConfig) {
@@ -473,6 +488,25 @@ export class GizmoController {
     ).clone();
     const startHit = this._rayToPlane(plane);
 
+    let absQWorld: Quaternion | undefined;
+    let refXWorld: Vector3 | undefined;
+    let refYWorld: Vector3 | undefined;
+    let lastHitWorld: Vector3 | undefined;
+    if (mode === "move") {
+      const [qx, qy, qz, qw] = orientToNormalQ(
+        this._normal.x,
+        this._normal.y,
+        this._normal.z,
+        this._rotation,
+      );
+      t.absLocalQ.set(qx, qy, qz, qw);
+      absQWorld = t.meshWorldQ.clone().multiply(t.absLocalQ);
+      extractRefAxesFromAbsQuaternion(absQWorld, t.refX, t.refY);
+      refXWorld = t.refX.clone();
+      refYWorld = t.refY.clone();
+      lastHitWorld = t.centerWorld.clone();
+    }
+
     this._dragState = {
       mode,
       plane,
@@ -487,6 +521,10 @@ export class GizmoController {
       startScale: this._scale,
       curNormal: this._normal.clone(),
       curRotation: this._rotation,
+      absQWorld,
+      refXWorld,
+      refYWorld,
+      lastHitWorld,
       cornerIndex,
       cornerWorld: undefined,
     };
@@ -506,32 +544,85 @@ export class GizmoController {
           !h.object.userData.isDecal && !h.object.userData.isGizmo && (h.object as Mesh).isMesh,
       );
     if (hits.length === 0) return;
-    const hitMesh = hits[0].object as Mesh;
-    t.v1.copy(hits[0].point);
-    hitMesh.worldToLocal(t.v1);
-    const fn = hits[0].face?.normal;
-    if (fn) {
-      t.v2.set(fn.x, fn.y, fn.z);
-      if (ds.curNormal.dot(t.v2) < 0.99996) {
-        ds.curRotation = transportRotation(
-          ds.curNormal.x,
-          ds.curNormal.y,
-          ds.curNormal.z,
-          ds.curRotation,
-          fn.x,
-          fn.y,
-          fn.z,
-        );
+
+    // Prefer hit near previous frame to reduce punch-through
+    let hit = hits[0];
+    if (ds.lastHitWorld) {
+      let best = hit;
+      let bestDist = hit.point.distanceTo(ds.lastHitWorld);
+      for (let i = 1; i < hits.length; i++) {
+        const d = hits[i].point.distanceTo(ds.lastHitWorld);
+        if (d < bestDist) {
+          best = hits[i];
+          bestDist = d;
+        }
       }
-      ds.curNormal.copy(t.v2);
+      hit = best;
     }
 
-    const pos: [number, number, number] = [t.v1.x, t.v1.y, t.v1.z];
-    const nrm: [number, number, number] = fn
-      ? [fn.x, fn.y, fn.z]
-      : [this._normal.x, this._normal.y, this._normal.z];
+    const hitMesh = hit.object as Mesh;
+    t.v1.copy(hit.point);
+    hitMesh.worldToLocal(t.v1);
+    if (ds.lastHitWorld) ds.lastHitWorld.copy(hit.point);
+    else ds.lastHitWorld = hit.point.clone();
 
-    this._events.onMove?.({ position: pos, normal: nrm, targetMesh: hitMesh });
+    const rawN = hit.normal ?? hit.face?.normal;
+    if (!rawN || !ds.absQWorld || !ds.refXWorld || !ds.refYWorld) {
+      this._events.onMove?.({
+        position: [t.v1.x, t.v1.y, t.v1.z],
+        normal: [this._normal.x, this._normal.y, this._normal.z],
+        targetMesh: hitMesh,
+      });
+      return;
+    }
+
+    t.nLocal.copy(rawN).normalize();
+    if (hit.face && t.nLocal.dot(hit.face.normal) < 0) {
+      t.nLocal.negate();
+    }
+    hitMesh.updateWorldMatrix(true, false);
+    hitMesh.getWorldQuaternion(t.meshWorldQ);
+    t.normalWorld.copy(t.nLocal).applyQuaternion(t.meshWorldQ).normalize();
+
+    const ok = absQuaternionFromNormalAndRef(
+      ds.absQWorld,
+      t.normalWorld.x,
+      t.normalWorld.y,
+      t.normalWorld.z,
+      ds.refXWorld.x,
+      ds.refXWorld.y,
+      ds.refXWorld.z,
+      ds.refYWorld.x,
+      ds.refYWorld.y,
+      ds.refYWorld.z,
+    );
+    if (!ok) {
+      this._events.onMove?.({
+        position: [t.v1.x, t.v1.y, t.v1.z],
+        normal: [t.nLocal.x, t.nLocal.y, t.nLocal.z],
+        targetMesh: hitMesh,
+      });
+      return;
+    }
+
+    t.meshWorldQInv.copy(t.meshWorldQ).invert();
+    t.absLocalQ.copy(t.meshWorldQInv).multiply(ds.absQWorld);
+    const nextRotation = extractSpinAroundNormal(
+      t.absLocalQ,
+      t.nLocal.x,
+      t.nLocal.y,
+      t.nLocal.z,
+    );
+    ds.curRotation = nextRotation;
+    ds.curNormal.copy(t.nLocal);
+
+    this._events.onMove?.({
+      position: [t.v1.x, t.v1.y, t.v1.z],
+      normal: [t.nLocal.x, t.nLocal.y, t.nLocal.z],
+      targetMesh: hitMesh,
+    });
+    // Also fire rotation when move reorients (granular API consumers)
+    this._events.onRotate?.({ rotation: nextRotation });
   }
 
   // ── Private: rotate drag ──

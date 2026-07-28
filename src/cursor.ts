@@ -7,9 +7,9 @@
 
 import type { Camera, Object3D, Vector3 } from "three";
 import { Quaternion, Vector3 as V3 } from "three";
-import type { GizmoCursorMode, GizmoCursorState } from "./types";
+import type { GizmoCursorMode, GizmoCursorState } from "./types.js";
 export type { GizmoCursorMode, GizmoCursorState };
-export { EMPTY_GIZMO_CURSOR } from "./types";
+export { EMPTY_GIZMO_CURSOR } from "./types.js";
 
 export interface ComputeGizmoCursorInput {
   camera: Camera;

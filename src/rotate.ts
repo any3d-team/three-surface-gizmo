@@ -12,7 +12,7 @@
  */
 
 import { Quaternion, Vector3 } from "three";
-import { orientToNormalQ } from "./orientation";
+import { orientToNormalQ } from "./orientation.js";
 
 export const ROTATE_SNAP_STEP = Math.PI / 2;
 export const ROTATE_SNAP_TOLERANCE = Math.PI / 24;

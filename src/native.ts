@@ -32,10 +32,10 @@ import {
   Vector3,
   WebGLRenderer,
 } from "three";
-import { GizmoController } from "./controller";
-import { createGizmoVisuals, updateGizmoVisuals, type GizmoVisuals } from "./visuals";
-import type { GizmoEvents, GizmoTransform } from "./types";
-import type { HandleMode } from "./types";
+import { GizmoController } from "./controller.js";
+import { createGizmoVisuals, updateGizmoVisuals, type GizmoVisuals } from "./visuals.js";
+import type { GizmoEvents, GizmoTransform } from "./types.js";
+import type { HandleMode } from "./types.js";
 
 // ── Options ─────────────────────────────────────────────────────────
 

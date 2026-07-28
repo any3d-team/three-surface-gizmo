@@ -18,7 +18,7 @@ import {
   SphereGeometry,
   TorusGeometry,
 } from "three";
-import { RING_RADIUS, RING_TUBE_RADIUS, GIZMO_COLOR, GIZMO_COLOR_MOVE } from "./types";
+import { RING_RADIUS, RING_TUBE_RADIUS, GIZMO_COLOR, GIZMO_COLOR_MOVE } from "./types.js";
 
 // ── Emphasized visual state ─────────────────────────────────────────
 

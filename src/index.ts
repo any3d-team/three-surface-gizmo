@@ -13,7 +13,7 @@ export type {
   MoveEvent,
   RotateEvent,
   ScaleEvent,
-} from "./types";
+} from "./types.js";
 export {
   EMPTY_GIZMO_CURSOR,
   GIZMO_TARGET_PIXEL_RADIUS,
@@ -23,18 +23,24 @@ export {
   RING_TUBE_RADIUS,
   ROTATE_SNAP_STEP,
   ROTATE_SNAP_TOLERANCE,
-} from "./types";
+} from "./types.js";
 
 // Controller
-export { GizmoController } from "./controller";
-export type { GizmoControllerConfig, GizmoFrameResult, HandleEmphasis } from "./controller";
+export { GizmoController } from "./controller.js";
+export type { GizmoControllerConfig, GizmoFrameResult, HandleEmphasis } from "./controller.js";
 
 // Visuals
-export { createGizmoVisuals, updateGizmoVisuals } from "./visuals";
-export type { GizmoVisuals } from "./visuals";
+export { createGizmoVisuals, updateGizmoVisuals } from "./visuals.js";
+export type { GizmoVisuals } from "./visuals.js";
 
 // Math
-export { orientToNormalQ, transportRotation } from "./orientation";
+export {
+  orientToNormalQ,
+  transportRotation,
+  extractSpinAroundNormal,
+  absQuaternionFromNormalAndRef,
+  extractRefAxesFromAbsQuaternion,
+} from "./orientation.js";
 export {
   angleInGizmoLocal,
   snapRotation,
@@ -42,9 +48,9 @@ export {
   decalRotationToYaw,
   decalRotationFromRingDrag,
   gizmoDragFrameQInv,
-} from "./rotate";
-export { computeGizmoCursorState } from "./cursor";
+} from "./rotate.js";
+export { computeGizmoCursorState } from "./cursor.js";
 
 // Native
-export { createGizmo } from "./native";
-export type { NativeGizmo, NativeGizmoOptions } from "./native";
+export { createGizmo } from "./native.js";
+export type { NativeGizmo, NativeGizmoOptions } from "./native.js";

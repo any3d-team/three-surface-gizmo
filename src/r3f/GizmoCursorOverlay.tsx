@@ -15,11 +15,41 @@
 
 "use client";
 
-import type { GizmoCursorMode, GizmoCursorState } from "../cursor";
+import {
+  forwardRef,
+  useCallback,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  type CSSProperties,
+} from "react";
+import type { GizmoCursorMode, GizmoCursorState } from "../cursor.js";
+import { EMPTY_GIZMO_CURSOR } from "../cursor.js";
 export type { GizmoCursorMode, GizmoCursorState };
 
-const ICON_CLASS =
-  "absolute top-0 left-0 w-[42px] h-[42px] opacity-0 transition-opacity duration-[120ms] ease-out pointer-events-none will-change-[transform,opacity]";
+const ICON_PX = 42;
+
+const ROOT_STYLE: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  pointerEvents: "none",
+  zIndex: 20,
+  overflow: "hidden",
+};
+
+const ICON_BASE_STYLE: CSSProperties = {
+  position: "absolute",
+  top: 0,
+  left: 0,
+  width: ICON_PX,
+  height: ICON_PX,
+  opacity: 0,
+  transition: "opacity 120ms ease-out",
+  pointerEvents: "none",
+  willChange: "transform, opacity",
+  filter: "drop-shadow(0 2px 6px rgba(0,0,0,0.45))",
+};
+
 const STROKE_OUTER = {
   stroke: "white",
   strokeWidth: 5,
@@ -31,28 +61,38 @@ const STROKE_INNER = {
   vectorEffect: "non-scaling-stroke" as const,
 };
 
-function CursorIcon({
-  mode,
-  active,
-  clientX,
-  clientY,
-  angleDeg,
-  isDragging,
-}: GizmoCursorState & { mode: GizmoCursorMode }) {
-  const visible = active === mode;
-  const pop = isDragging ? 1.12 : 1;
+export interface GizmoCursorOverlayHandle {
+  /** Imperative update — avoids React re-render of parent trees (Canvas). */
+  setState: (state: GizmoCursorState) => void;
+}
 
+function applyIconStyle(
+  el: SVGSVGElement | null,
+  state: GizmoCursorState,
+  mode: GizmoCursorMode,
+): void {
+  if (!el) return;
+  const visible = state.active === mode;
+  const pop = state.isDragging ? 1.12 : 1;
+  el.style.left = `${state.clientX}px`;
+  el.style.top = `${state.clientY}px`;
+  el.style.opacity = visible ? "1" : "0";
+  el.style.transform = `translate(-50%, -50%) rotate(${state.angleDeg}deg) scale(${pop})`;
+}
+
+type IconProps = {
+  mode: GizmoCursorMode;
+  svgRef: (el: SVGSVGElement | null) => void;
+};
+
+function CursorIconSvg({ mode, svgRef }: IconProps) {
   return (
     <svg
-      className={ICON_CLASS}
-      style={{
-        left: clientX,
-        top: clientY,
-        opacity: visible ? 1 : 0,
-        transform: `translate(-50%, -50%) rotate(${angleDeg}deg) scale(${pop})`,
-        filter: "drop-shadow(0 2px 6px rgba(0,0,0,0.45))",
-      }}
+      ref={svgRef}
+      style={ICON_BASE_STYLE}
       viewBox="0 0 42 42"
+      width={ICON_PX}
+      height={ICON_PX}
       fill="none"
       aria-hidden
     >
@@ -110,13 +150,48 @@ function CursorIcon({
   );
 }
 
-/** Gizmo cursor DOM overlay (rendered outside Canvas, pointer-events: none) */
-export function GizmoCursorOverlay(props: GizmoCursorState) {
+/** Gizmo cursor DOM overlay (outside Canvas, pointer-events: none) */
+export const GizmoCursorOverlay = forwardRef<
+  GizmoCursorOverlayHandle,
+  Partial<GizmoCursorState>
+>(function GizmoCursorOverlay(props, ref) {
+  const rotateRef = useRef<SVGSVGElement | null>(null);
+  const moveRef = useRef<SVGSVGElement | null>(null);
+  const scaleRef = useRef<SVGSVGElement | null>(null);
+  const stateRef = useRef<GizmoCursorState>({ ...EMPTY_GIZMO_CURSOR });
+
+  const paint = useCallback((state: GizmoCursorState) => {
+    stateRef.current = state;
+    applyIconStyle(rotateRef.current, state, "rotate");
+    applyIconStyle(moveRef.current, state, "move");
+    applyIconStyle(scaleRef.current, state, "scale");
+  }, []);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      setState: paint,
+    }),
+    [paint],
+  );
+
+  // Controlled props path (simple demos / when not using ref)
+  useLayoutEffect(() => {
+    if (props.active === undefined && props.clientX === undefined) return;
+    paint({
+      active: props.active ?? null,
+      clientX: props.clientX ?? 0,
+      clientY: props.clientY ?? 0,
+      angleDeg: props.angleDeg ?? 0,
+      isDragging: props.isDragging ?? false,
+    });
+  }, [props.active, props.clientX, props.clientY, props.angleDeg, props.isDragging, paint]);
+
   return (
-    <div className="fixed inset-0 pointer-events-none z-20 overflow-hidden" aria-hidden>
-      <CursorIcon {...props} mode="rotate" />
-      <CursorIcon {...props} mode="move" />
-      <CursorIcon {...props} mode="scale" />
+    <div style={ROOT_STYLE} aria-hidden>
+      <CursorIconSvg mode="rotate" svgRef={(el) => { rotateRef.current = el; }} />
+      <CursorIconSvg mode="move" svgRef={(el) => { moveRef.current = el; }} />
+      <CursorIconSvg mode="scale" svgRef={(el) => { scaleRef.current = el; }} />
     </div>
   );
-}
+});

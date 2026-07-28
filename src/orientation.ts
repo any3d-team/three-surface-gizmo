@@ -1,12 +1,11 @@
 /**
  * Normal-aligned orientation quaternion (+Z to normal, spin around normal).
  *
- * Shared by the gizmo controller (handle orientation) and decal geometry
- * construction — guarantees the controller orientation and the geometry
- * orientation are consistent.
+ * Shared by the gizmo (handle orientation) and decal geometry construction —
+ * guarantees controller orientation and geometry orientation stay consistent.
  */
 
-import { Object3D, Quaternion, Vector3 } from "three";
+import { Matrix4, Object3D, Quaternion, Vector3 } from "three";
 
 /** Reusable temporaries (module-level singletons, JS single-thread safe) */
 const _orientObj = new Object3D();
@@ -14,12 +13,17 @@ const _orientNormal = new Vector3();
 const _UP_Y = new Vector3(0, 1, 0);
 const _UP_Z = new Vector3(0, 0, 1);
 
+/** Temporaries for spin extraction / reference-axis projection */
+const _tBaseNew = new Quaternion();
+const _tLocal = new Quaternion();
+const _tOldQ = new Quaternion();
 const _tN1 = new Vector3();
 const _tN2 = new Vector3();
-const _tOldQ = new Quaternion();
-const _tBaseNew = new Quaternion();
-const _tTransport = new Quaternion();
-const _tLocal = new Quaternion();
+const _tX = new Vector3();
+const _tY = new Vector3();
+const _tZ = new Vector3();
+const _tRef = new Vector3();
+const _tMat = new Matrix4();
 
 /**
  * Compute an orientation quaternion that aligns +Z with the given normal
@@ -27,8 +31,10 @@ const _tLocal = new Quaternion();
  *
  * Implementation: lookAt(normal) + rotateZ(π) + rotateY(π) + rotateZ(rotation).
  * When the normal is close to ±Y (parallel to default up=(0,1,0)), the up
- * vector is switched to +Z to avoid lookAt degeneracy (cross product of
- * up×z being zero → NaN orientation).
+ * vector is switched to +Z to avoid lookAt degeneracy.
+ *
+ * Axis convention (do not change lightly — locked with decals/Gizmo):
+ * after lookAt + rotateZ(π)+rotateY(π), **+Z ≈ -normal**.
  *
  * @returns quaternion [x, y, z, w]
  */
@@ -50,20 +56,85 @@ export function orientToNormalQ(
 }
 
 /**
- * Parallel transport: when a decal moves from an old normal to a new one,
- * compute the new spin angle that keeps the pattern's world orientation
- * continuous. This prevents the "spin jump" that occurs when the orientToNormalQ
- * lookAt reference (fixed world up) changes with the normal.
+ * Extract spin around normal relative to the orientToNormalQ(N, 0) base frame.
+ * Assumes absQ ≈ orientToNormalQ(N, r) under the same axis convention.
+ */
+export function extractSpinAroundNormal(
+  absQ: Quaternion,
+  nx: number,
+  ny: number,
+  nz: number,
+): number {
+  const [bx, by, bz, bw] = orientToNormalQ(nx, ny, nz, 0);
+  _tBaseNew.set(bx, by, bz, bw);
+  _tLocal.copy(_tBaseNew).invert().multiply(absQ);
+  return 2 * Math.atan2(_tLocal.z, _tLocal.w);
+}
+
+/**
+ * Rebuild absolute orientation from a fixed reference tangent + new normal
+ * (path-independent, no holonomy drift).
  *
- * Formula:
- *   orientToNormalQ(newN, newR) = qTransport · orientToNormalQ(oldN, oldR)
+ * On move drag: lock local +X world direction (refX) at pointer-down, then each
+ * frame project refX onto the new normal's tangent plane and rebuild an
+ * orthonormal frame. Same normal → same spin; no lookAt(up) twist.
  *
- * where qTransport is the shortest rotation from oldN to newN.
+ * Axis convention matches orientToNormalQ: world +Z ≈ -normal.
+ * If refX is near-parallel to the normal, fall back to refY; if still degenerate,
+ * return false (caller keeps previous frame).
  *
- * Both normals must be in the same coordinate space (both mesh-local or both
- * world). Degenerate case: oldN ≈ -newN — setFromUnitVectors picks an arbitrary
- * orthogonal axis, but such sharp-edge transitions are usually discarded by
- * the caller's backface threshold.
+ * @returns whether outQ was written successfully
+ */
+export function absQuaternionFromNormalAndRef(
+  outQ: Quaternion,
+  normalX: number,
+  normalY: number,
+  normalZ: number,
+  refXx: number,
+  refXy: number,
+  refXz: number,
+  refYx: number,
+  refYy: number,
+  refYz: number,
+): boolean {
+  _tN1.set(normalX, normalY, normalZ).normalize();
+  // +Z ≈ -normal (same as orientToNormalQ)
+  _tZ.copy(_tN1).negate();
+
+  const tryProject = (rx: number, ry: number, rz: number): boolean => {
+    _tRef.set(rx, ry, rz);
+    // Project onto tangent plane: t = ref - n (ref·n)
+    _tX.copy(_tRef).addScaledVector(_tN1, -_tRef.dot(_tN1));
+    if (_tX.lengthSq() < 1e-12) return false;
+    _tX.normalize();
+    return true;
+  };
+
+  if (!tryProject(refXx, refXy, refXz) && !tryProject(refYx, refYy, refYz)) {
+    return false;
+  }
+
+  // Right-handed: Y = Z × X, then re-orthogonalize X = Y × Z
+  _tY.crossVectors(_tZ, _tX).normalize();
+  _tX.crossVectors(_tY, _tZ).normalize();
+  _tMat.makeBasis(_tX, _tY, _tZ);
+  outQ.setFromRotationMatrix(_tMat);
+  return true;
+}
+
+/** Extract world-space local +X / +Y from an absolute orientation (drag ref axes). */
+export function extractRefAxesFromAbsQuaternion(
+  absQ: Quaternion,
+  outX: Vector3,
+  outY: Vector3,
+): void {
+  outX.set(1, 0, 0).applyQuaternion(absQ);
+  outY.set(0, 1, 0).applyQuaternion(absQ);
+}
+
+/**
+ * Parallel transport (shortest stepwise rotation). Accumulates holonomy on
+ * curved surfaces — prefer absQuaternionFromNormalAndRef for surface move.
  *
  * @returns compensated spin angle (radians)
  */
@@ -76,23 +147,13 @@ export function transportRotation(
   newNy: number,
   newNz: number,
 ): number {
+  const [ox, oy, oz, ow] = orientToNormalQ(oldNx, oldNy, oldNz, oldR);
+  _tOldQ.set(ox, oy, oz, ow);
   _tN1.set(oldNx, oldNy, oldNz).normalize();
   _tN2.set(newNx, newNy, newNz).normalize();
-
-  // Old absolute orientation
-  const [ox, oy, oz, ow] = orientToNormalQ(_tN1.x, _tN1.y, _tN1.z, oldR);
-  _tOldQ.set(ox, oy, oz, ow);
-
-  // New normal base frame (spin = 0) as reference for extracting newR
-  const [bx, by, bz, bw] = orientToNormalQ(_tN2.x, _tN2.y, _tN2.z, 0);
-  _tBaseNew.set(bx, by, bz, bw);
-
-  // qTransport: shortest rotation from oldN → newN; right-multiply old frame
-  _tTransport.setFromUnitVectors(_tN1, _tN2).multiply(_tOldQ);
-
-  // Extract spin in the new normal base frame: baseNew⁻¹ · desired ≈ pure Z rotation
-  _tLocal.copy(_tBaseNew).invert().multiply(_tTransport);
-
-  // Z-rotation quaternion has form (0, 0, sin θ/2, cos θ/2) → θ = 2·atan2(z, w)
-  return 2 * Math.atan2(_tLocal.z, _tLocal.w);
+  if (_tN1.dot(_tN2) <= 0.999999) {
+    _tLocal.setFromUnitVectors(_tN1, _tN2);
+    _tOldQ.premultiply(_tLocal);
+  }
+  return extractSpinAroundNormal(_tOldQ, newNx, newNy, newNz);
 }

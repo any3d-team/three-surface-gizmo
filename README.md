@@ -122,6 +122,9 @@ function createGizmo(options: NativeGizmoOptions): {
 
 ### &lt;Gizmo&gt; (R3F)
 
+Uses **native capture-phase** pointer handling (not R3F mesh events) so handles stay
+pickable with `depthTest: false`, and batches `onUpdate` via `requestAnimationFrame`.
+
 ```tsx
 interface GizmoProps {
   position: [number, number, number];

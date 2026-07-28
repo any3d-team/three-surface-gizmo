@@ -1,9 +1,9 @@
 {
   "name": "three-surface-gizmo",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Surface-aligned 3D transform gizmo for three.js — move (surface-projected), rotate (snap-to-90°), scale. Supports vanilla three.js and R3F.",
   "license": "MIT",
-  "author": "",
+  "author": "Any3D",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/any3d-team/three-surface-gizmo.git"
@@ -38,7 +38,6 @@
     "surface",
     "decal"
   ],
-  "homepage": "",
   "peerDependencies": {
     "@react-three/fiber": ">=9.0.0",
     "react": ">=18.0.0",

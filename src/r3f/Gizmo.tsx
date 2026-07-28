@@ -42,7 +42,6 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   Color,
   Group,
-  Matrix4,
   Mesh,
   MeshBasicMaterial,
   Object3D,
@@ -238,13 +237,11 @@ export function Gizmo({
     ctrl.setCamera(camera);
     ctrl.setCanvasElement(gl.domElement);
 
-    // Compute parent matrix inverse
-    const parentInv = new Matrix4().copy(parent.matrixWorld).invert();
-
-    const result = ctrl.update(camera, size, parentInv);
+    // parent.matrixWorld (controller inverts internally → parent-local space)
+    const result = ctrl.update(camera, size, parent.matrixWorld);
     lastFrameRef.current = result;
 
-    // Apply world transform
+    // Apply parent-local transform from controller
     root.position.copy(result.worldPosition);
     root.quaternion.copy(result.worldQuaternion);
     root.scale.copy(result.worldScale);

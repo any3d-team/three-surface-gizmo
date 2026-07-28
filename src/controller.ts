@@ -15,7 +15,7 @@
  * const ctrl = new GizmoController(config)
  * ctrl.setEvents({ onMove: (e) => ..., onRotate: (e) => ... })
  * // each frame:
- * const result = ctrl.update(camera, size, parentInvMatrix)
+ * const result = ctrl.update(camera, size, parent.matrixWorld)
  * // on events:
  * ctrl.handlePointerDown(event, "rotate")
  * ctrl.handlePointerMove(event)
@@ -52,9 +52,6 @@ import { orientToNormalQ, transportRotation } from "./orientation";
 // ── Constants ───────────────────────────────────────────────────────
 
 const GIZMO_TARGET_PIXEL_RADIUS = 84;
-const GIZMO_COLOR = 0x135bec;
-const GIZMO_COLOR_MOVE = 0xf4f6fb;
-const RING_TUBE_RADIUS = 0.065;
 
 // ── Internal types ──────────────────────────────────────────────────
 
@@ -80,15 +77,6 @@ interface DragState {
   cornerWorld?: Vector3;
 }
 
-// ── Color helpers ───────────────────────────────────────────────────
-
-const _lerpWhite = new Color(0xffffff);
-const _lerpBase = new Color();
-
-function lerpColor(base: number, t: number): Color {
-  return _lerpBase.setHex(base).lerp(_lerpWhite, t);
-}
-
 // ── Scale handle layout ─────────────────────────────────────────────
 
 const SCALE_HANDLE_AXES: Array<[number, number]> = [
@@ -109,11 +97,14 @@ export interface HandleEmphasis {
 // ── Frame update result ─────────────────────────────────────────────
 
 export interface GizmoFrameResult {
-  /** World-space position for the gizmo root group */
+  /**
+   * Position for the gizmo root group (parent-local space).
+   * Field names keep the historical `world*` prefix for API stability.
+   */
   worldPosition: Vector3;
-  /** World-space quaternion for the gizmo root group */
+  /** Quaternion for the gizmo root group (parent-local space) */
   worldQuaternion: Quaternion;
-  /** World-space scale for the gizmo root group */
+  /** Scale for the gizmo root group (parent-local space; screen-constant sizing) */
   worldScale: Vector3;
   /** Whether the gizmo is visible (faces camera) */
   visible: boolean;
@@ -172,6 +163,8 @@ export class GizmoController {
     q: new Quaternion(),
     v1: new Vector3(),
     v2: new Vector3(),
+    /** View direction for backface culling — must not alias scale (v2) */
+    viewDir: new Vector3(),
     parentInv: new Matrix4(),
     cornerWorld: new Vector3(),
   };
@@ -256,6 +249,14 @@ export class GizmoController {
 
   // ── Per-frame update ──
 
+  /**
+   * Per-frame update: compute gizmo transform in the parent object's local space.
+   *
+   * @param parentMatrix - Parent object's `matrixWorld` (not the inverse).
+   *   Pass identity when the gizmo root is a direct child of the scene.
+   * @returns Position / quaternion / scale for the gizmo root group (parent-local),
+   *   plus visibility, handle emphasis, and cursor state.
+   */
   update(
     camera: Camera,
     size: { width: number; height: number },
@@ -269,7 +270,7 @@ export class GizmoController {
     this._targetMesh.localToWorld(t.centerWorld.copy(t.localPos));
     this._centerWorld.copy(t.centerWorld);
 
-    // Compute pixel-radius → world-scale
+    // Compute pixel-radius → world-scale (screen-constant size)
     const distance = t.centerWorld.distanceTo(camera.position);
     const vFov = ((camera as PerspectiveCamera).fov ?? 50) * (Math.PI / 180);
     const worldPerPixel = (2 * Math.tan(vFov / 2) * distance) / Math.max(size.height, 1);
@@ -290,16 +291,16 @@ export class GizmoController {
       .compose(t.localPos, t.q, t.v2.setScalar(gizmoLocalScale))
       .premultiply(this._targetMesh.matrixWorld);
 
-    // Convert to parent local space
+    // Convert world matrix → parent local space (parentMatrix is matrixWorld)
     t.parentInv.copy(parentMatrix).invert();
     t.parentInv.multiply(t.desiredMat);
     t.parentInv.decompose(t.v1, t.q, t.v2);
 
-    // Backface visibility
+    // Backface visibility — use viewDir so we do not clobber the decomposed scale in v2
     this._targetMesh.getWorldQuaternion(t.meshWorldQ);
     t.normalWorld.set(this._normal.x, this._normal.y, this._normal.z).applyQuaternion(t.meshWorldQ);
-    t.v2.copy(t.centerWorld).sub(camera.position).normalize();
-    const visible = t.normalWorld.dot(t.v2) < 0;
+    t.viewDir.copy(t.centerWorld).sub(camera.position).normalize();
+    const visible = t.normalWorld.dot(t.viewDir) < 0;
 
     // Cursor state (only if hover or drag active)
     let cursorState = EMPTY_GIZMO_CURSOR;

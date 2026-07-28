@@ -2,6 +2,8 @@
 
 A surface-aligned 3D transform gizmo for three.js. Unlike standard transform controls that move objects in free 3D space, this gizmo **sticks to surfaces** — perfect for decal placement, texture projection, and surface editing tools.
 
+**Demo:** [https://any3d.cc/en-US/tools/model-decal](https://any3d.cc/en-US/tools/model-decal)
+
 <p align="center">
   <img src="./image.png" alt="three-surface-gizmo demo" width="100%" />
 </p>

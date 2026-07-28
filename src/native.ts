@@ -32,9 +32,9 @@ import {
   Vector3,
   WebGLRenderer,
 } from "three";
-import { GizmoController, type GizmoControllerConfig } from "./controller";
+import { GizmoController } from "./controller";
 import { createGizmoVisuals, updateGizmoVisuals, type GizmoVisuals } from "./visuals";
-import type { GizmoEvents, GizmoPatch, GizmoTransform } from "./types";
+import type { GizmoEvents, GizmoTransform } from "./types";
 import type { HandleMode } from "./types";
 
 // ── Options ─────────────────────────────────────────────────────────
